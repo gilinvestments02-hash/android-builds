@@ -1,41 +1,121 @@
-name: Build APK and AAB
+name: Build Android APK
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
+          distribution: temurin
           java-version: '17'
-          distribution: 'temurin'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y wget unzip
+          mkdir -p $HOME/android-sdk/cmdline-tools
+          cd $HOME/android-sdk/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
+          unzip -q tools.zip
+          mv cmdline-tools latest
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Build APK and AAB
-        uses: gradle/gradle-build-action@v2
-        with:
-          gradle-version: 8.5
-          arguments: clean assembleDebug bundleDebug --stacktrace
+      - name: Install Gradle
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O gradle.zip
+          unzip -q gradle.zip
+          echo "$PWD/gradle-8.7/bin" >> $GITHUB_PATH
+
+      - name: Create WebView App
+        run: |
+          mkdir -p app/src/main/java/com/gil/app
+          cat > settings.gradle <<'EOF'
+          rootProject.name = "GilApp"
+          include ':app'
+          EOF
+          cat > build.gradle <<'EOF'
+          buildscript {
+            repositories { google(); mavenCentral() }
+            dependencies { classpath 'com.android.tools.build:gradle:8.5.2' }
+          }
+          allprojects { repositories { google(); mavenCentral() } }
+          EOF
+          cat > app/build.gradle <<'EOF'
+          apply plugin: 'com.android.application'
+          android {
+            namespace 'com.gil.app'
+            compileSdk 35
+            defaultConfig {
+              applicationId "com.gil.app"
+              minSdk 24
+              targetSdk 35
+              versionCode 1
+              versionName "1.0"
+            }
+            compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET" />
+            <application android:allowBackup="true" android:label="GILWEB2APPs" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+              <activity android:name=".MainActivity" android:exported="true">
+                <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/gil/app/MainActivity.java <<'EOF'
+          package com.gil.app;
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          public class MainActivity extends Activity {
+            protected void onCreate(Bundle b) {
+              super.onCreate(b);
+              WebView w = new WebView(this);
+              setContentView(w);
+              WebSettings s = w.getSettings();
+              s.setJavaScriptEnabled(true);
+              s.setDomStorageEnabled(true);
+              w.setWebViewClient(new WebViewClient());
+              w.loadUrl("https://example.com");
+            }
+          }
+          EOF
+
+      - name: Build Debug APK and AAB
+        run: |
+          gradle assembleDebug --no-daemon
+          gradle bundleDebug --no-daemon
+          ls -lh app/build/outputs/apk/debug/ app/build/outputs/bundle/debug/
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
+          name: GilApp-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-aab
+          name: GilApp-AAB
           path: app/build/outputs/bundle/debug/app-debug.aab
+          if-no-files-found: error
