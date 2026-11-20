@@ -5,6 +5,9 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -40,9 +43,11 @@ jobs:
           unzip -q gradle.zip
           echo "$PWD/gradle-8.7/bin" >> $GITHUB_PATH
 
-      - name: Create WebView App
+      - name: Create GILWEB2APPs Project
         run: |
           mkdir -p app/src/main/java/com/gil/app
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/mipmap-hdpi
           cat > settings.gradle <<'EOF'
           rootProject.name = "GilApp"
           include ':app'
@@ -67,13 +72,26 @@ jobs:
               versionName "1.0"
             }
             compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+            buildTypes {
+              release { minifyEnabled false }
+              debug { minifyEnabled false }
+            }
           }
+          EOF
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources><string name="app_name">GILWEB2APPs</string></resources>
+          EOF
+          cat > app/src/main/res/values/themes.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources><style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar" /></resources>
           EOF
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.INTERNET" />
-            <application android:allowBackup="true" android:label="GILWEB2APPs" android:theme="@android:style/Theme.Material.Light.NoActionBar">
-              <activity android:name=".MainActivity" android:exported="true">
+            <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+            <application android:allowBackup="true" android:label="@string/app_name" android:theme="@style/AppTheme">
+              <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden">
                 <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
               </activity>
             </application>
@@ -87,35 +105,43 @@ jobs:
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           public class MainActivity extends Activity {
+            private WebView w;
             protected void onCreate(Bundle b) {
               super.onCreate(b);
-              WebView w = new WebView(this);
+              w = new WebView(this);
               setContentView(w);
               WebSettings s = w.getSettings();
               s.setJavaScriptEnabled(true);
               s.setDomStorageEnabled(true);
+              s.setLoadWithOverviewMode(true);
+              s.setUseWideViewPort(true);
               w.setWebViewClient(new WebViewClient());
               w.loadUrl("https://example.com");
+            }
+            public void onBackPressed() {
+              if (w.canGoBack()) { w.goBack(); } else { super.onBackPressed(); }
             }
           }
           EOF
 
-      - name: Build Debug APK and AAB
+      - name: Build APK and AAB
         run: |
-          gradle assembleDebug --no-daemon
-          gradle bundleDebug --no-daemon
-          ls -lh app/build/outputs/apk/debug/ app/build/outputs/bundle/debug/
+          gradle assembleDebug --no-daemon --stacktrace
+          gradle bundleDebug --no-daemon --stacktrace
+          echo "=== SIZE CHECK ==="
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/bundle/debug/app-debug.aab
+          APK_SIZE=$(stat -c%s app/build/outputs/apk/debug/app-debug.apk)
+          echo "APK bytes: $APK_SIZE"
+          if [ "$APK_SIZE" -lt 1000000 ]; then echo "ERROR: APK too small, build is broken"; exit 1; fi
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | head -n 30
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: GilApp-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-      - name: Upload AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: GilApp-AAB
-          path: app/build/outputs/bundle/debug/app-debug.aab
-          if-no-files-found: error
+      - name: Upload to Release - No Node Warning
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="build-${{ github.run_number }}"
+          gh release create "$TAG" --title "GILWEB2APPs Build $TAG" --notes "APK for testing, AAB for Play Console" || true
+          gh release upload "$TAG" app/build/outputs/apk/debug/app-debug.apk --clobber
+          gh release upload "$TAG" app/build/outputs/bundle/debug/app-debug.aab --clobber
+          echo "Done - check Releases tab"
