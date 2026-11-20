@@ -95,7 +95,7 @@ jobs:
               s.setJavaScriptEnabled(true);
               s.setDomStorageEnabled(true);
               w.setWebViewClient(new WebViewClient());
-              w.loadUrl("https://example.com");
+              w.loadUrl("https://taskmzansi.wuaze.com");
             }
           }
           EOF
