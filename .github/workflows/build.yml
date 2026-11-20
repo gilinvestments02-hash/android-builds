@@ -116,7 +116,7 @@ jobs:
               s.setLoadWithOverviewMode(true);
               s.setUseWideViewPort(true);
               w.setWebViewClient(new WebViewClient());
-              w.loadUrl("https://example.com");
+              w.loadUrl("https://taskmzansi.wuaze.com");
             }
             public void onBackPressed() {
               if (w.canGoBack()) { w.goBack(); } else { super.onBackPressed(); }
