@@ -18,14 +18,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.2.2
 
       - name: Create WebView App
         run: |
           mkdir -p app/src/main/java/com/gil/app
-          mkdir -p app/src/main/res/layout
-          mkdir -p app/src/main/res/values
           cat > settings.gradle <<'EOF'
           rootProject.name = "GilApp"
           include ':app'
@@ -84,11 +84,7 @@ jobs:
           EOF
 
       - name: Build Debug APK
-        run: |
-          chmod +x gradlew || true
-          gradle assembleDebug --no-daemon || ./gradlew assembleDebug --no-daemon
-        env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
